@@ -1,0 +1,404 @@
+import React, { useState, useEffect, useRef } from 'react';
+import { Car, Trophy, Zap, Heart, AlertCircle, ArrowLeft, ArrowRight } from 'lucide-react';
+
+const RacingGame = () => {
+  const canvasRef = useRef(null);
+  const [gameState, setGameState] = useState('menu'); // menu, playing, gameOver
+  const [score, setScore] = useState(0);
+  const [lives, setLives] = useState(3);
+  const [highScore, setHighScore] = useState(0);
+  const [speed, setSpeed] = useState(5);
+  const gameLoopRef = useRef(null);
+
+  const game = useRef({
+    player: { x: 175, y: 450, width: 50, height: 80, lane: 1 },
+    obstacles: [],
+    coins: [],
+    roadOffset: 0,
+    lastObstacle: 0,
+    lastCoin: 0,
+  }).current;
+
+  const moveLeft = () => {
+    if (gameState === 'playing' && game.player.lane > 0) {
+      game.player.lane--;
+      game.player.x = [100, 200, 300][game.player.lane];
+    }
+  };
+
+  const moveRight = () => {
+    if (gameState === 'playing' && game.player.lane < 2) {
+      game.player.lane++;
+      game.player.x = [100, 200, 300][game.player.lane];
+    }
+  };
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    
+    const ctx = canvas.getContext('2d');
+    const lanes = [100, 200, 300];
+
+    const drawRoad = () => {
+      ctx.fillStyle = '#2d3748';
+      ctx.fillRect(0, 0, 400, 600);
+      
+      // Road lines
+      ctx.strokeStyle = '#fbbf24';
+      ctx.lineWidth = 3;
+      ctx.setLineDash([20, 20]);
+      
+      for (let i = 0; i < 3; i++) {
+        ctx.beginPath();
+        ctx.moveTo(150 + i * 100, (game.roadOffset % 40) - 40);
+        ctx.lineTo(150 + i * 100, 600);
+        ctx.stroke();
+      }
+      ctx.setLineDash([]);
+      
+      // Road borders
+      ctx.strokeStyle = '#fff';
+      ctx.lineWidth = 5;
+      ctx.beginPath();
+      ctx.moveTo(50, 0);
+      ctx.lineTo(50, 600);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(350, 0);
+      ctx.lineTo(350, 600);
+      ctx.stroke();
+    };
+
+    const drawPlayer = () => {
+      const p = game.player;
+      
+      // Car body
+      ctx.fillStyle = '#ef4444';
+      ctx.fillRect(p.x, p.y, p.width, p.height);
+      
+      // Car details
+      ctx.fillStyle = '#7f1d1d';
+      ctx.fillRect(p.x + 5, p.y + 10, p.width - 10, 25);
+      
+      // Wheels
+      ctx.fillStyle = '#1f2937';
+      ctx.fillRect(p.x - 5, p.y + 15, 8, 15);
+      ctx.fillRect(p.x + p.width - 3, p.y + 15, 8, 15);
+      ctx.fillRect(p.x - 5, p.y + 50, 8, 15);
+      ctx.fillRect(p.x + p.width - 3, p.y + 50, 8, 15);
+      
+      // Windshield
+      ctx.fillStyle = '#60a5fa';
+      ctx.fillRect(p.x + 10, p.y + 15, p.width - 20, 20);
+    };
+
+    const drawObstacle = (obs) => {
+      // Other car
+      ctx.fillStyle = obs.color;
+      ctx.fillRect(obs.x, obs.y, obs.width, obs.height);
+      
+      ctx.fillStyle = '#1f2937';
+      ctx.fillRect(obs.x - 5, obs.y + 10, 8, 15);
+      ctx.fillRect(obs.x + obs.width - 3, obs.y + 10, 8, 15);
+      ctx.fillRect(obs.x - 5, obs.y + obs.height - 25, 8, 15);
+      ctx.fillRect(obs.x + obs.width - 3, obs.y + obs.height - 25, 8, 15);
+      
+      ctx.fillStyle = '#60a5fa';
+      ctx.fillRect(obs.x + 10, obs.y + obs.height - 35, obs.width - 20, 20);
+    };
+
+    const drawCoin = (coin) => {
+      ctx.fillStyle = '#fbbf24';
+      ctx.beginPath();
+      ctx.arc(coin.x + 15, coin.y + 15, 15, 0, Math.PI * 2);
+      ctx.fill();
+      
+      ctx.fillStyle = '#d97706';
+      ctx.beginPath();
+      ctx.arc(coin.x + 15, coin.y + 15, 10, 0, Math.PI * 2);
+      ctx.fill();
+      
+      ctx.fillStyle = '#fbbf24';
+      ctx.font = 'bold 16px Arial';
+      ctx.textAlign = 'center';
+      ctx.fillText('$', coin.x + 15, coin.y + 20);
+    };
+
+    const checkCollision = (obj1, obj2) => {
+      return obj1.x < obj2.x + obj2.width &&
+             obj1.x + obj1.width > obj2.x &&
+             obj1.y < obj2.y + obj2.height &&
+             obj1.y + obj1.height > obj2.y;
+    };
+
+    const spawnObstacle = () => {
+      const laneIndex = Math.floor(Math.random() * 3);
+      const colors = ['#3b82f6', '#10b981', '#8b5cf6', '#f59e0b'];
+      game.obstacles.push({
+        x: lanes[laneIndex],
+        y: -80,
+        width: 50,
+        height: 80,
+        color: colors[Math.floor(Math.random() * colors.length)]
+      });
+    };
+
+    const spawnCoin = () => {
+      const laneIndex = Math.floor(Math.random() * 3);
+      game.coins.push({
+        x: lanes[laneIndex] - 15,
+        y: -30,
+        width: 30,
+        height: 30
+      });
+    };
+
+    const gameLoop = () => {
+      if (gameState !== 'playing') return;
+
+      ctx.clearRect(0, 0, 400, 600);
+      
+      drawRoad();
+      game.roadOffset += speed;
+
+      // Spawn obstacles
+      game.lastObstacle++;
+      if (game.lastObstacle > 60 - speed) {
+        spawnObstacle();
+        game.lastObstacle = 0;
+      }
+
+      // Spawn coins
+      game.lastCoin++;
+      if (game.lastCoin > 80) {
+        spawnCoin();
+        game.lastCoin = 0;
+      }
+
+      // Update and draw obstacles
+      game.obstacles = game.obstacles.filter(obs => {
+        obs.y += speed;
+        
+        if (checkCollision(game.player, obs)) {
+          setLives(prev => {
+            const newLives = prev - 1;
+            if (newLives <= 0) {
+              setGameState('gameOver');
+            }
+            return newLives;
+          });
+          return false;
+        }
+        
+        if (obs.y > 600) {
+          setScore(prev => prev + 10);
+          return false;
+        }
+        
+        drawObstacle(obs);
+        return true;
+      });
+
+      // Update and draw coins
+      game.coins = game.coins.filter(coin => {
+        coin.y += speed;
+        
+        if (checkCollision(game.player, coin)) {
+          setScore(prev => prev + 50);
+          return false;
+        }
+        
+        if (coin.y > 600) return false;
+        
+        drawCoin(coin);
+        return true;
+      });
+
+      drawPlayer();
+      
+      gameLoopRef.current = requestAnimationFrame(gameLoop);
+    };
+
+    const handleKeyPress = (e) => {
+      if (gameState !== 'playing') return;
+      
+      if (e.key === 'ArrowLeft') {
+        moveLeft();
+      } else if (e.key === 'ArrowRight') {
+        moveRight();
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyPress);
+
+    if (gameState === 'playing') {
+      gameLoop();
+    }
+
+    return () => {
+      window.removeEventListener('keydown', handleKeyPress);
+      if (gameLoopRef.current) {
+        cancelAnimationFrame(gameLoopRef.current);
+      }
+    };
+  }, [gameState, speed]);
+
+  useEffect(() => {
+    if (score > 0 && score % 200 === 0) {
+      setSpeed(prev => Math.min(prev + 0.5, 12));
+    }
+  }, [score]);
+
+  const startGame = () => {
+    setGameState('playing');
+    setScore(0);
+    setLives(3);
+    setSpeed(5);
+    game.player = { x: 175, y: 450, width: 50, height: 80, lane: 1 };
+    game.obstacles = [];
+    game.coins = [];
+    game.roadOffset = 0;
+    game.lastObstacle = 0;
+    game.lastCoin = 0;
+  };
+
+  const returnToMenu = () => {
+    if (score > highScore) {
+      setHighScore(score);
+    }
+    setGameState('menu');
+  };
+
+  if (gameState === 'menu') {
+    return (
+      <div className="w-full h-screen bg-gradient-to-br from-gray-900 via-blue-900 to-purple-900 flex items-center justify-center">
+        <div className="bg-gray-800 p-8 rounded-2xl shadow-2xl text-center max-w-md">
+          <div className="flex justify-center mb-6">
+            <Car className="w-20 h-20 text-red-500" />
+          </div>
+          <h1 className="text-4xl font-bold text-white mb-4">مسابقه سرعت</h1>
+          <p className="text-gray-300 mb-6">از موانع دوری کنید و سکه‌ها را جمع کنید!</p>
+          
+          <div className="bg-gray-700 p-4 rounded-lg mb-6">
+            <div className="flex items-center justify-center gap-2 mb-2">
+              <Trophy className="w-6 h-6 text-yellow-400" />
+              <span className="text-white text-xl">بهترین امتیاز: {highScore}</span>
+            </div>
+          </div>
+
+          <div className="bg-gray-700 p-4 rounded-lg mb-6 text-right">
+            <h3 className="text-white font-bold mb-2">راهنما:</h3>
+            <p className="text-gray-300 text-sm">⬅️ ➡️ فلش چپ و راست: حرکت</p>
+            <p className="text-gray-300 text-sm">🚗 از ماشین‌ها دوری کنید</p>
+            <p className="text-gray-300 text-sm">💰 سکه‌ها را جمع کنید</p>
+            <p className="text-gray-300 text-sm">⚡ هر 200 امتیاز سرعت بالا می‌رود</p>
+          </div>
+
+          <button
+            onClick={startGame}
+            className="w-full bg-gradient-to-r from-red-500 to-pink-500 text-white font-bold py-4 px-8 rounded-lg hover:from-red-600 hover:to-pink-600 transition-all transform hover:scale-105"
+          >
+            شروع بازی
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  if (gameState === 'gameOver') {
+    return (
+      <div className="w-full h-screen bg-gradient-to-br from-gray-900 via-red-900 to-purple-900 flex items-center justify-center">
+        <div className="bg-gray-800 p-8 rounded-2xl shadow-2xl text-center max-w-md">
+          <AlertCircle className="w-20 h-20 text-red-500 mx-auto mb-4" />
+          <h1 className="text-4xl font-bold text-white mb-4">بازی تمام شد!</h1>
+          
+          <div className="bg-gray-700 p-4 rounded-lg mb-4">
+            <div className="flex items-center justify-center gap-2 mb-2">
+              <Zap className="w-6 h-6 text-yellow-400" />
+              <span className="text-white text-xl">امتیاز: {score}</span>
+            </div>
+            {score > highScore && (
+              <p className="text-green-400 font-bold">🎉 رکورد جدید!</p>
+            )}
+          </div>
+
+          <div className="bg-gray-700 p-4 rounded-lg mb-6">
+            <div className="flex items-center justify-center gap-2">
+              <Trophy className="w-6 h-6 text-yellow-400" />
+              <span className="text-white text-xl">بهترین امتیاز: {Math.max(score, highScore)}</span>
+            </div>
+          </div>
+
+          <div className="flex gap-4">
+            <button
+              onClick={startGame}
+              className="flex-1 bg-gradient-to-r from-green-500 to-emerald-500 text-white font-bold py-3 px-6 rounded-lg hover:from-green-600 hover:to-emerald-600 transition-all"
+            >
+              دوباره بازی
+            </button>
+            <button
+              onClick={returnToMenu}
+              className="flex-1 bg-gray-600 text-white font-bold py-3 px-6 rounded-lg hover:bg-gray-700 transition-all"
+            >
+              منوی اصلی
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="w-full min-h-screen bg-gradient-to-br from-gray-900 via-blue-900 to-purple-900 flex items-center justify-center p-4">
+      <div className="bg-gray-800 p-6 rounded-2xl shadow-2xl">
+        <div className="flex justify-between items-center mb-4">
+          <div className="flex items-center gap-2">
+            <Zap className="w-6 h-6 text-yellow-400" />
+            <span className="text-white text-xl font-bold">امتیاز: {score}</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <Heart className="w-6 h-6 text-red-500" />
+            <span className="text-white text-xl font-bold">جان: {lives}</span>
+          </div>
+        </div>
+        
+        <div className="relative">
+          <canvas
+            ref={canvasRef}
+            width={400}
+            height={600}
+            className="border-4 border-gray-700 rounded-lg"
+          />
+        </div>
+
+        <div className="mt-4 bg-gray-700 p-4 rounded-lg">
+          <p className="text-center text-gray-300 text-sm mb-3">
+            کنترل ماشین
+          </p>
+          <div className="flex justify-center gap-6">
+            <button
+              onMouseDown={moveLeft}
+              onTouchStart={(e) => {e.preventDefault(); moveLeft();}}
+              className="bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white font-bold py-6 px-8 rounded-xl transition-all transform active:scale-95 shadow-lg flex items-center justify-center"
+            >
+              <ArrowLeft className="w-8 h-8" />
+            </button>
+            <button
+              onMouseDown={moveRight}
+              onTouchStart={(e) => {e.preventDefault(); moveRight();}}
+              className="bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white font-bold py-6 px-8 rounded-xl transition-all transform active:scale-95 shadow-lg flex items-center justify-center"
+            >
+              <ArrowRight className="w-8 h-8" />
+            </button>
+          </div>
+          <div className="flex justify-center gap-2 mt-3">
+            <span className="text-yellow-400 text-sm">⚡ سرعت: {speed.toFixed(1)}x</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+export default RacingGame;
